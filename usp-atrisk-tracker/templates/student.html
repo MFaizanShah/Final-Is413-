@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}{{ s.student_id }} | {{ course.code }}{% endblock %}
+{% block content %}
+{% set p = s.prediction %}
+{% set pf = (s.p_fail or 0) * 100 %}
+<nav class="crumbs no-print"><a href="{{ url_for('overview') }}">Home</a> / <a href="{{ url_for('course_dashboard', course_id=course.id) }}">{{ course.code }}</a> / {{ s.student_id if saved else 'What-if analysis' }}</nav>
+<div class="page-head">
+  <div>
+    <div class="row">
+      <h1 class="{{ 'mono' if saved }}" style="{{ 'font-size:26px' if saved }}">{{ s.student_id if saved else 'What-if result' }}</h1>
+      <span class="badge badge-{{ s.tone }}"><i class="dot dot-{{ s.tone }}"></i>{{ s.status }}</span>
+    </div>
+    <p class="meta">{{ course.code }} {{ course.name }}. {{ s.graded_count }} of {{ s.total_count }} assessments graded ({{ '%.0f'|format(s.graded_weight) }}% of the course).{% if not saved %} Nothing you entered is saved.{% endif %}</p>
+  </div>
+  <div class="row no-print">
+    <button class="btn" type="button" onclick="window.print()">Print report</button>
+    {% if saved %}<button class="btn" type="button" onclick="openAsk('Write an email to {{ s.student_id }}')">Draft an email</button>{% endif %}
+    <a class="btn" href="{{ url_for('individual', course_id=course.id) if not saved else url_for('course_dashboard', course_id=course.id) }}">{{ 'Change the marks' if not saved else 'Back to class' }}</a>
+  </div>
+</div>
+
+{% if s.status == 'No data' %}
+<div class="card empty"><h2>No marks uploaded for this student yet</h2></div>
+{% else %}
+<div class="grid grid-5 mb">
+  <div class="kpi accent"><div class="label">Current average</div><div class="value">{{ s.current_avg }}%</div><div class="note">{{ s.earned }}% of the final mark banked</div></div>
+  <div class="kpi"><div class="label">Most likely final grade</div><div class="value"><span class="grade-pill {{ 'fail' if s.predicted_grade == 'D' }}" style="font-size:22px">{{ s.predicted_grade or '-' }}</span></div>
+    <div class="note">{% if p and p.source == 'actual' %}final result{% elif p %}{{ '%.0f'|format(p.confidence * 100) }}% likely, about {{ '%.0f'|format(p.projected_mark) }}%{% endif %}</div></div>
+  <div class="kpi"><div class="label"><i class="dot dot-danger"></i>Chance of failing</div><div class="value" style="color:{{ 'var(--risk-ink)' if s.status == 'At Risk' else 'inherit' }}">{{ '%.0f'|format(pf) }}%</div>
+    <div class="meter" style="margin-top:6px"><div style="width:{{ pf }}%;background:{{ 'var(--risk)' if s.status == 'At Risk' else 'var(--watch)' if s.status == 'Borderline' else 'var(--ok)' }}"></div></div></div>
+  <div class="kpi"><div class="label">Best possible grade</div><div class="value"><span class="grade-pill {{ 'fail' if s.best_grade == 'D' }}" style="font-size:22px">{{ s.best_grade }}</span></div><div class="note">at most {{ s.best_possible }}% with full marks left</div></div>
+  <div class="kpi"><div class="label">Average needed to pass</div><div class="value">{% if s.complete %}Done{% elif not s.feasible %}<span class="diff-neg">N/A</span>{% elif s.required_for_pass <= 0 %}0%{% else %}{{ '%.0f'|format(s.required_for_pass) }}%{% endif %}</div>
+    <div class="note">{% if s.complete %}all assessments graded{% elif not s.feasible %}a pass is no longer possible{% else %}on the remaining {{ '%.0f'|format(s.remaining) }}%{% endif %}</div></div>
+</div>
+
+{% if s.checks %}{% set a = s.checks.arithmetic %}{% set m = s.checks.model %}
+<section class="checks" aria-label="The two checks">
+  <div class="check decided">
+    <div class="step">Check 1: arithmetic from the weights</div>
+    <h3><span class="badge badge-{{ a.tone }}">{{ a.verdict }}</span></h3>
+    <p>{{ a.text }}</p>
+  </div>
+  <div class="arrow" aria-hidden="true">&rarr;</div>
+  <div class="check {{ 'skipped' if a.decides }}">
+    <div class="step">Check 2: {{ s.checks.model_name|lower }}</div>
+    <h3><span class="badge badge-{{ m.tone }}">{{ m.verdict }}</span></h3>
+    <p>{{ m.text }}</p>
+  </div>
+</section>
+{% endif %}
+{% if drift and drift.level == 'high' and p and p.source == 'model' and not s.checks.arithmetic.decides %}
+<p class="small muted" style="margin-top:-8px">This class looks different from the students the model learned from, so treat the percentage as a rough guide.</p>
+{% endif %}
+
+<div class="grid grid-2">
+  <section class="card">
+    <h2>Why this status</h2>
+    <ul class="points">
+      {% for r in s.reasons %}<li><span class="mark note" aria-hidden="true">!</span><span>{{ r }}</span></li>{% endfor %}
+    </ul>
+    {% if p and p.source == 'model' and s.factors and not s.checks.arithmetic.decides %}
+      <h3 class="mt">Main factors behind the random forest's estimate</h3>
+      <ul class="points">
+      {% for f in s.factors %}
+        <li><span class="mark {{ f.direction }}" aria-label="{{ 'raises the risk' if f.direction == 'up' else 'lowers the risk' }}">{{ '&uarr;'|safe if f.direction == 'up' else '&darr;'|safe }}</span><span>{{ f.text }}</span></li>
+      {% endfor %}
+      </ul>
+      <p class="small muted" style="margin:6px 0 0">&uarr; raises the chance of failing, &darr; lowers it. Strongest effect first.</p>
+    {% elif p and p.source == 'simulation' %}
+      <h3 class="mt">How the estimate was simulated</h3>
+      <ul class="reason-list">{% for x in p.assumptions %}<li>{{ x }}</li>{% endfor %}</ul>
+    {% endif %}
+  </section>
+  <section class="card">
+    <h2>Suggested support actions</h2>
+    <ul class="actions">
+      {% for rec in s.recommendations %}<li><div class="t"><span class="pri {{ rec.priority }}">{{ rec.priority }}</span>{{ rec.title }}</div><div class="d">{{ rec.detail }}</div></li>
+      {% else %}<li class="muted">No actions suggested.</li>{% endfor %}
+    </ul>
+    <p class="small muted" style="margin:10px 0 0">Suggestions are prompts for the lecturer. Decisions about a student always rest with academic staff.</p>
+  </section>
+</div>
+
+<div class="grid grid-2 mt">
+  <section class="card">
+    <h2>Chance of each final grade</h2>
+    {% if p %}<div id="c-probs"></div>
+    <p class="chart-foot">{% if p.guardrail %}Set by check 1: the arithmetic already decides the pass or fail side.{% elif p.source == 'model' and p.grade_basis == 'average' %}Chance of failing from the random forest; passing grades spread around the current average, because past results were pass or fail only.{% elif p.source == 'model' %}Calibrated probabilities from the random forest.{% elif p.source == 'simulation' %}Share of simulated outcomes.{% else %}Final result.{% endif %}</p>
+    {% else %}<p class="muted">No estimate available yet.</p>{% endif %}
+  </section>
+  <section class="card">
+    <h2>Marks compared with the class</h2>
+    <div id="c-compare"></div>
+    <p class="chart-foot">This student's mark on each graded assessment against the current class average.</p>
+  </section>
+</div>
+
+<div class="grid grid-2 mt">
+  <section class="card">
+    <h2>Where the student is falling behind</h2>
+    <table>
+      <thead><tr><th>Area</th><th class="num">Average</th><th class="num">vs class</th><th>Assessment</th></tr></thead>
+      <tbody>
+      {% for t in s.types %}
+        <tr><td><b>{{ t.atype }}</b> <span class="small muted">{{ t.count }} item{{ 's' if t.count != 1 }}, {{ t.weight|round(0)|int }}% of course</span></td>
+          <td class="num">{{ t.avg_mark }}%</td>
+          <td class="num {{ 'diff-neg' if t.gap < 0 else 'diff-pos' }}">{{ '%+.1f'|format(t.gap) }}</td>
+          <td><span class="badge {{ 'badge-danger' if t.level == 'Weak' else 'badge-success' if t.level == 'Strong' else 'badge-neutral' }}">{{ t.level }}</span></td></tr>
+      {% else %}<tr><td colspan="4" class="muted">No graded work yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted" style="margin:10px 0 0">Weak means below 50%, or 8 or more points below the class average, in that type of assessment.</p>
+  </section>
+  <section class="card">
+    <h2>What it takes to reach each grade</h2>
+    <table>
+      <thead><tr><th>Grade</th><th class="num">Average needed on remaining work</th><th>Outlook</th></tr></thead>
+      <tbody>
+      {% for gp in s.grade_paths|reverse %}
+        <tr><td><span class="grade-pill">{{ gp.grade }}</span></td>
+          <td class="num">{% if s.complete %}-{% elif gp.status == 'secured' %}already secured{% else %}{{ '%.0f'|format(gp.required) }}%{% endif %}</td>
+          <td>{% if s.complete %}<span class="muted">complete</span>{% elif gp.status == 'secured' %}<span class="badge badge-success">Secured</span>{% elif gp.status == 'possible' %}<span class="badge {{ 'badge-warning' if gp.required > 75 else 'badge-info' }}">{{ 'Stretch' if gp.required > 75 else 'Achievable' }}</span>{% else %}<span class="badge badge-neutral">Out of reach</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted" style="margin:10px 0 0">Calculated from this course's weights (check 1), so it applies to any assessment structure.</p>
+  </section>
+</div>
+
+<section class="panel flush mt">
+  <div class="panel-head"><h2>Assessment breakdown</h2><span class="small muted">Bar: the student's mark. Black tick: class average. Dashed line: 50%.</span></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Assessment</th><th>Type</th><th class="num">Weight</th><th class="num">Mark</th><th style="width:24%"></th><th class="num">Class average</th><th class="num">Difference</th></tr></thead>
+    <tbody>
+    {% for a in assessments %}{% set w = s.weaknesses|selectattr('name', 'equalto', a.name)|first %}
+      <tr>
+        <td>{{ a.name }}</td><td class="small">{{ a.atype }}</td><td class="num">{{ a.weight|round(1) }}%</td>
+        {% if w %}
+          <td class="num"><b>{{ w.mark }}</b>{% if w.mark == 0 %} <span class="badge badge-danger">not submitted</span>{% endif %}</td>
+          <td><div class="markbar"><span class="pass"></span><i class="{{ 'low' if w.mark < 50 }}" style="width:{{ w.mark }}%"></i>{% if w.class_avg is not none %}<b style="left:calc({{ w.class_avg }}% - 1px)" title="Class average {{ w.class_avg }}%"></b>{% endif %}</div></td>
+          <td class="num">{{ w.class_avg if w.class_avg is not none else '-' }}</td>
+          <td class="num {{ 'diff-neg' if (w.gap_class or 0) < 0 else 'diff-pos' }}">{% if w.gap_class is none %}-{% elif w.gap_class|abs < 0.05 %}0.0{% else %}{{ '%+.1f'|format(w.gap_class) }}{% endif %}</td>
+        {% else %}
+          <td class="num muted">not yet assessed</td><td></td><td class="num muted">{{ class_avg[a.id] if class_avg[a.id] is not none else '-' }}</td><td></td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+<script>
+function openAsk(q) {
+  var fab = document.getElementById("fab"), d = document.getElementById("drawer");
+  if (!d) return;
+  if (!d.classList.contains("open")) fab.click();
+  document.getElementById("drawer-q").value = q;
+  document.getElementById("drawer-form").requestSubmit();
+}
+(function () {
+  var C = USPCharts.colors, grades = {{ GRADES|tojson }};
+  {% if p %}
+  var probs = {{ p.probs|tojson }};
+  USPCharts.bar(document.getElementById("c-probs"), {
+    labels: grades, max: 100, height: 240, directLabels: true,
+    valueFormat: function (v) { return v < 1 ? (v > 0 ? "<1%" : "0%") : Math.round(v) + "%"; },
+    series: [{ name: "Chance", values: grades.map(function (g) { return Math.round(probs[g] * 1000) / 10; }),
+               color: C.s1, colors: grades.map(function (g) { return g === "D" ? C.crit : C.s1; }) }]
+  });
+  {% endif %}
+  var names = {{ assessments|map(attribute='name')|list|tojson }};
+  var rows = {{ (s.weaknesses or [])|tojson }};
+  var ctx = {{ class_avg|tojson }};
+  var ids = {{ assessments|map(attribute='id')|list|tojson }};
+  function byName(n, key) { var r = rows.filter(function (x) { return x.name === n; })[0]; return r ? r[key] : null; }
+  var el = document.getElementById("c-compare");
+  if (el) USPCharts.bar(el, {
+    labels: names, max: 100, height: 260,
+    series: [
+      { name: "This student", color: C.s1, values: names.map(function (n) { return byName(n, "mark"); }) },
+      { name: "Class average", color: C.s2, values: ids.map(function (id) { var v = ctx[id]; return v === undefined ? null : v; }) }
+    ],
+    valueFormat: function (v) { return v.toFixed(1) + "%"; },
+    refLine: { value: 50, label: "Pass mark" }
+  });
+})();
+</script>
+{% endblock %}

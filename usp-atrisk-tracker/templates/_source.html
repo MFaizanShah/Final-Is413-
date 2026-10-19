@@ -1,0 +1,21 @@
+{# Where predictions come from, in one line, with the detail on request. #}
+{% if source %}
+<div class="source-line">
+  {% if source.kind == 'model' %}
+    <span class="tag model">Trained predictions</span>
+    <span>Based on {{ '{:,}'.format(version.summary.n_students) if version and version.summary else 'past' }} students from earlier cohorts.</span>
+  {% else %}
+    <span class="tag simulation">Estimates</span>
+    <span>{{ source.text }}</span>
+  {% endif %}
+  {% if drift and drift.level == 'high' %}
+  <details>
+    <summary>Use with care</summary>
+    <div class="drift-detail drawer">
+      This class looks different from the students the model learned from, so treat the percentages as a rough guide.
+      <ul>{% for i in drift['items'] %}<li>{{ i.text }}</li>{% endfor %}</ul>
+    </div>
+  </details>
+  {% endif %}
+</div>
+{% endif %}

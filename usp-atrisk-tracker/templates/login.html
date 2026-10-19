@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in | USP At Risk Tracker</title>
+<link rel="icon" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+</head>
+<body>
+<div class="login-wrap">
+  <section class="login-side">
+    <div class="brand-row"><img src="{{ url_for('static', filename='logo.png') }}" alt="">University of the South Pacific</div>
+    <div>
+      <h1>See which students need you, while there is still time to help.</h1>
+      <p>The At Risk Tracker reads the marks so far, compares them with how thousands of past students finished, and tells you who to contact first and why.</p>
+    </div>
+    <p class="small" style="opacity:.75">For academic staff. Students are shown by pseudonymous code.</p>
+  </section>
+  <section class="login-form">
+    <h2>Sign in</h2>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}<div class="flash flash-{{ category }}">{{ message }}</div>{% endfor %}
+    {% endwith %}
+    <form method="post">
+      <div class="field"><label for="u">Username</label><input id="u" type="text" name="username" autocomplete="username" autofocus required></div>
+      <div class="field"><label for="p">Password</label><input id="p" type="password" name="password" autocomplete="current-password" required></div>
+      <button class="btn btn-primary" style="width:100%;padding:11px">Sign in</button>
+    </form>
+    {% if demo_accounts %}
+    <p class="small muted" style="margin-top:18px">Demo account{{ 's' if demo_accounts|length > 1 }}:
+      {% for u, pw, note in demo_accounts %}<b>{{ u }}</b> / {{ pw }} ({{ note }}){{ '; ' if not loop.last else '.' }}{% endfor %}
+      Change these passwords before real use.</p>
+    {% endif %}
+  </section>
+</div>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{# The three steps to add a course. Set `step` (1 to 3) before including. #}
+<ol class="steps" aria-label="Adding a course">
+  {% for label in ["Course outline and thresholds", "Upload this semester's marks", "See who is at risk"] %}
+  <li class="{{ 'done' if loop.index < step else 'now' if loop.index == step else '' }}" {{ 'aria-current="step"'|safe if loop.index == step }}>
+    <span class="n">{{ '&#10003;'|safe if loop.index < step else loop.index }}</span>{{ label }}</li>
+  {% endfor %}
+</ol>

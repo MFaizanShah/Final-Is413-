@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Admin portal | USP At Risk Tracker{% endblock %}
+{% block crumbs %}Admin / <b>Data and courses</b>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Admin portal</h1>
+    <p class="sub-title">Upload, map and validate course data, manage dataset versions and lecturer access. Lecturers see results only.</p>
+  </div>
+  <div class="row">
+    {% if not hosted_notice %}<form method="post" action="{{ url_for('admin_demo') }}" onsubmit="return confirm('Add five fictional demo courses? They are made-up data and will also be used to train the model.')"><button class="btn">Add fictional demo courses</button></form>{% endif %}
+    <a class="btn" href="{{ url_for('admin_upload') }}">Upload marks</a>
+    <a class="btn btn-primary" href="{{ url_for('course_new') }}">Add a course</a>
+  </div>
+</div>
+
+<div class="grid grid-4 mb">
+  <div class="kpi accent"><div class="label">Courses</div><div class="value">{{ rows|length }}</div><div class="note">{{ rows|selectattr('current')|list|length }} with current data</div></div>
+  <div class="kpi"><div class="label">Courses with history</div><div class="value">{{ rows|selectattr('history.n')|list|length }}</div><div class="note">past cohorts with final outcomes</div></div>
+  <div class="kpi"><div class="label">Active model</div><div class="value" style="font-size:18px">{% if version %}v{{ version.id }}{% else %}none{% endif %}</div>
+    <div class="note">{% if training %}a new version is training{% elif version %}{{ version.summary.n_students }} students, ROC AUC {{ version.summary.headline_auc }}{% else %}{{ readiness }}{% endif %}</div></div>
+  <div class="kpi"><div class="label">Model inputs</div><div class="value" style="font-size:18px">{{ 'Ready' if ready else 'Not enough' }}</div><div class="note">{{ readiness }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Courses</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Course</th><th>Current semester data</th><th>History</th><th>Prediction</th><th>Lecturers</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><b>{{ r.course.code }}</b> <span class="small muted">{{ r.course.name }}</span></td>
+        <td class="small">{% if r.current %}{{ r.current.label }} v{{ r.current.version }}, {{ r.current.n_rows }} students<br><span class="muted">{{ r.current.uploaded_at }} by {{ r.current.uploaded_by }}</span>{% else %}<span class="muted">none</span>{% endif %}</td>
+        <td class="small">{% if r.history.n %}{{ r.history.n }} students, {{ r.history.cohorts }} cohort(s), pass rate {{ '%.0f'|format(r.history.pass_rate * 100) }}%{% else %}<span class="muted">none</span>{% endif %}</td>
+        <td>{% if not version %}<span class="badge badge-neutral">Simulated</span>{% elif r.in_model %}<span class="badge badge-info">Random forest, own history</span>{% elif r.history.n %}<span class="badge badge-warning">Retrain to add its history</span>{% else %}<span class="badge badge-info">Random forest</span>{% endif %}</td>
+        <td class="small">{% for u in r.lecturers %}{{ u.full_name or u.username }}{{ ', ' if not loop.last }}{% else %}<span style="color:var(--warn-ink)">none assigned</span>{% endfor %}</td>
+        <td><a class="btn btn-sm" href="{{ url_for('admin_course', course_id=r.course.id) }}">Manage</a> <a class="btn btn-sm" href="{{ url_for('admin_upload', course_id=r.course.id) }}">Upload</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted" style="padding:22px">No courses yet. <a href="{{ url_for('course_new') }}">Add a course</a>, set its thresholds and upload this semester's marks to see who is at risk.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% if library %}
+<div class="card mt">
+  <h2>Training library</h2>
+  <p class="small muted" style="margin-top:-6px">Past cohorts with known final results. The random forest learns from these; they do not appear as teaching courses. Upload a past cohort to any course to add to it.</p>
+  <table>
+    <thead><tr><th>Source</th><th class="num">Past students</th><th class="num">Cohorts</th><th class="num">Pass rate</th><th></th></tr></thead>
+    <tbody>{% for l in library %}
+      <tr><td><b>{{ l.course.code }}</b> <span class="small muted">{{ l.course.name }}{{ ', ' ~ l.course.campus if l.course.campus }}</span></td>
+        <td class="num">{{ '{:,}'.format(l.history.n) }}</td><td class="num">{{ l.history.cohorts }}</td>
+        <td class="num">{{ '%.0f'|format(l.history.pass_rate * 100) ~ '%' if l.history.pass_rate is not none else '-' }}</td>
+        <td><a class="btn btn-sm" href="{{ url_for('admin_course', course_id=l.course.id) }}">Manage</a></td></tr>
+    {% endfor %}</tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card mt">
+  <div class="page-head" style="margin-bottom:8px"><h2 style="margin:0">Recent activity</h2><a class="btn btn-sm" href="{{ url_for('admin_audit') }}">Full audit log</a></div>
+  {% include "admin/_audit_table.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="USP At Risk Tracker emblem">
+  <circle cx="32" cy="32" r="31" fill="#0B2E59"/>
+  <circle cx="32" cy="32" r="27.5" fill="none" stroke="#E8A317" stroke-width="1.5"/>
+  <rect x="18" y="30" width="6" height="12" rx="1.5" fill="#E8A317"/>
+  <rect x="29" y="23" width="6" height="19" rx="1.5" fill="#E8A317"/>
+  <rect x="40" y="16" width="6" height="26" rx="1.5" fill="#E8A317"/>
+  <path d="M14 46 C 20 42, 26 50, 32 46 S 44 42, 50 46" fill="none" stroke="#3FC1C9" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M17 51 C 22 48, 27 54, 32 51 S 42 48, 47 51" fill="none" stroke="#3FC1C9" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+</svg>

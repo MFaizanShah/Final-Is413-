@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card empty"><img src="{{ url_for('static', filename='logo.png') }}" alt=""><h2>{{ message }}</h2><a class="btn" href="{{ url_for('overview') }}">Back to home</a></div>
+{% endblock %}

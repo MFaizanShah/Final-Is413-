@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}USP At Risk Tracker{% endblock %}</title>
+<link rel="icon" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+<script src="{{ url_for('static', filename='charts.js') }}?v=3"></script>
+</head>
+<body>
+{% set ep = request.endpoint %}
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="{{ url_for('overview') }}">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="">
+      <div><div class="usp">University of the South Pacific</div><div class="product">At Risk Tracker</div></div>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="{{ url_for('overview') }}" class="{{ 'active' if ep == 'overview' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
+      <a href="{{ url_for('assistant_view') }}" class="{{ 'active' if ep == 'assistant_view' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z"/></svg>Assistant</a>
+      <a href="{{ url_for('model_view') }}" class="{{ 'active' if ep == 'model_view' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>How predictions work</a>
+
+      <div class="nav-section">{{ 'Courses' if is_admin else 'My courses' }}</div>
+      {% for c in all_courses %}
+        {% set here = course is defined and course and course.id == c.id %}
+        <a href="{{ url_for('course_dashboard', course_id=c.id) }}" class="{{ 'active' if here and ep in ('course_dashboard', 'student_view') }}" title="{{ c.name }}">
+          <span class="code">{{ c.code }}</span><span style="opacity:.8;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</span>
+          {% if nav_counts.get(c.id) %}<span class="count" title="Students at risk">{{ nav_counts[c.id] }}</span>{% endif %}</a>
+        {% if here %}
+        <div class="sub">
+          <a href="{{ url_for('individual', course_id=c.id) }}" class="{{ 'active' if ep == 'individual' }}">What-if analysis</a>
+          {% if is_admin %}<a href="{{ url_for('admin_course', course_id=c.id) }}" class="{{ 'active' if ep == 'admin_course' }}">Thresholds and data</a>{% endif %}
+        </div>
+        {% endif %}
+      {% else %}
+        <div class="small" style="padding:6px 20px;opacity:.7">No courses yet.</div>
+      {% endfor %}
+      <a href="{{ url_for('course_new') }}" class="{{ 'active' if ep == 'course_new' }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add a course</a>
+
+      {% if is_admin %}
+      <div class="nav-section">Administration</div>
+      <a href="{{ url_for('admin_upload') }}" class="{{ 'active' if ep in ('admin_upload', 'admin_mapping') }}">Upload marks</a>
+      <a href="{{ url_for('admin_home') }}" class="{{ 'active' if ep == 'admin_home' }}">Courses and training data</a>
+      <a href="{{ url_for('users') }}" class="{{ 'active' if ep == 'users' }}">Users</a>
+      <a href="{{ url_for('admin_audit') }}" class="{{ 'active' if ep == 'admin_audit' }}">Audit log</a>
+      <a href="{{ url_for('admin_reidentify') }}" class="{{ 'active' if ep == 'admin_reidentify' }}">Pseudonym key</a>
+      {% endif %}
+    </nav>
+    <div class="sidebar-footer">
+      Signed in as <b>{{ g.user.full_name or g.user.username }}</b><br>
+      {{ 'Administrator' if is_admin else 'Lecturer' }}<br>
+      <span class="row" style="gap:14px;margin-top:6px">{% if not is_admin %}<a href="{{ url_for('users') }}">Change password</a>{% endif %}<a href="{{ url_for('logout') }}">Sign out</a></span>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <button type="button" aria-label="Open menu" onclick="document.body.classList.toggle('nav-open')">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <span class="t">At Risk Tracker</span>
+    </header>
+    <main class="content" id="content">
+      {% if hosted_notice %}<div class="flash flash-warning">This is a hosted copy. Changes you make here are temporary and model training is switched off.</div>{% endif %}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}<div class="flash flash-{{ category }}">{{ message }}</div>{% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+{% if ep != 'assistant_view' and all_courses %}
+<button class="fab no-print" type="button" id="fab" aria-expanded="false" aria-controls="drawer">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z"/></svg><span>Ask a question</span></button>
+<section class="drawer-panel" id="drawer" aria-label="Assistant">
+  <div class="dh"><b>Assistant</b>
+    <select id="drawer-course" aria-label="Course" style="margin-left:auto;padding:4px 8px;font-size:14px">
+      {% for c in all_courses %}<option value="{{ c.id }}" {{ 'selected' if course is defined and course and course.id == c.id }}>{{ c.code }}</option>{% endfor %}
+    </select>
+    <button class="btn btn-ghost btn-sm" type="button" id="drawer-close" aria-label="Close">&times;</button></div>
+  <div class="chat-log" id="drawer-log" aria-live="polite"></div>
+  <div class="suggest" id="drawer-suggest"></div>
+  <form class="chat-input" id="drawer-form"><input type="text" id="drawer-q" placeholder="Ask about this course or a student" autocomplete="off" aria-label="Question"><button class="btn btn-primary btn-sm">Ask</button></form>
+</section>
+<script src="{{ url_for('static', filename='assistant.js') }}?v=3"></script>
+<script>
+  AtRiskChat.mount({ log: "drawer-log", form: "drawer-form", input: "drawer-q", suggest: "drawer-suggest", course: "drawer-course",
+                     endpoint: "{{ url_for('api_ask_any') }}" });
+  (function () {
+    var fab = document.getElementById("fab"), d = document.getElementById("drawer");
+    function toggle(open) { d.classList.toggle("open", open); fab.setAttribute("aria-expanded", open); if (open) document.getElementById("drawer-q").focus(); }
+    fab.onclick = function () { toggle(!d.classList.contains("open")); };
+    document.getElementById("drawer-close").onclick = function () { toggle(false); };
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") toggle(false); });
+  })();
+</script>
+{% endif %}
+</body>
+</html>

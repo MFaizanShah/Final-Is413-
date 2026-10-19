@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Confirm mapping | USP At Risk Tracker{% endblock %}
+{% block crumbs %}Admin / <a href="{{ url_for('admin_upload') }}">Upload data</a> / <b>Confirm mapping</b>{% endblock %}
+{% block content %}
+{% if staged.kind == 'current' %}{% set step = 2 %}{% include "_steps.html" %}{% endif %}
+{% set src_labels = {'rule': 'keyword rule', 'llm': 'AI suggestion, please check', 'file': 'from the file', 'saved': 'saved course structure', 'admin': 'set by you', 'none': 'not recognised, please choose'} %}
+<div class="page-head">
+  <div>
+    <h1>Check the columns</h1>
+    <p class="sub-title"><b>{{ staged.filename }}</b> for {{ course.code }} {{ course.name }}:
+      {{ 'this semester\'s marks' if staged.kind == 'current' else 'past cohorts with final results' }}, {{ staged.data|length }} rows.
+      Nothing is saved until you press Save{{ ', after which the results open' if staged.kind == 'current' }}.
+      {% if staged.used_profile %}The saved structure for {{ course.code }} was applied where the file did not say otherwise.{% endif %}</p>
+  </div>
+</div>
+
+<form method="post" id="mapform">
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Checks</h2>
+    {% if result.errors %}
+      <div class="issue-box error"><h3>{{ result.errors|length }} problem(s) to fix before saving</h3><ul class="issues">{% for e in result.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+    {% else %}
+      <div class="issue-box info"><h3>Ready to save</h3>{{ result.stats.students }} students, {{ result.stats.assessments }} assessments{% if staged.kind == 'historical' %}, {{ result.stats.with_outcome }} with final outcomes{% endif %}{% if result.stats.cohorts %}, cohorts: {{ result.stats.cohorts|join(', ') }}{% endif %}.</div>
+    {% endif %}
+    {% if result.error_lines %}
+      <div class="issue-box {{ 'warning' if mapping.exclude_error_rows else 'error' }}"><h3>{{ 'Rows that will be excluded' if mapping.exclude_error_rows else 'Rows with problems' }}</h3>
+        <div class="scroll-list"><ul class="issues">{% for l in result.error_lines %}<li>{{ l }}</li>{% endfor %}</ul></div>
+        <label style="font-weight:400;display:block;margin-top:8px"><input type="checkbox" name="exclude_error_rows" value="yes" {{ 'checked' if mapping.exclude_error_rows }}> Exclude these {{ result.error_lines|length }} row(s) and save the rest. The exclusion is recorded in the audit log.</label>
+      </div>
+    {% endif %}
+    {% if result.warnings %}<div class="issue-box warning"><h3>Warnings</h3><ul class="issues">{% for w in result.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
+    {% if result.info %}<div class="issue-box info"><ul class="issues">{% for i in result.info %}<li>{{ i }}</li>{% endfor %}</ul></div>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Dataset</h2>
+    <div class="field"><label>Semester or cohort label</label><input type="text" name="label" value="{{ staged.label }}" style="width:100%">
+      <div class="hint">{% if staged.kind == 'current' %}Saving replaces the course's current class. The previous version stays available for roll back.{% else %}Saving with an existing label creates a new version and retrains the model.{% endif %}</div></div>
+    <div class="field"><label>File layout</label>
+      <select name="layout"><option value="wide" {{ 'selected' if mapping.layout == 'wide' }}>Wide: one row per student</option><option value="long" {{ 'selected' if mapping.layout == 'long' }}>Long: one row per student per assessment</option></select>
+      <div class="hint">Detected as {{ mapping.layout }}. Changing it clears the column roles below.</div></div>
+    <p class="small muted">Student IDs will be replaced by pseudonymous codes on save. Columns marked as personal data are never stored.</p>
+  </div>
+</div>
+
+<div class="card mt">
+  <h2>1. Columns in the file</h2>
+  <table class="compact">
+    <thead><tr><th>Column</th><th>First values</th><th style="width:220px">Use as</th><th></th></tr></thead>
+    <tbody>
+    {% for c in mapping.columns %}{% set i = loop.index0 %}
+      <tr><td><b>{{ c.col }}</b></td>
+        <td class="small muted">{% for r in preview[:3] %}{{ r[i] }}{{ ', ' if not loop.last }}{% endfor %}</td>
+        <td><select name="role_{{ i }}">{% for r in roles %}<option value="{{ r }}" {{ 'selected' if c.role == r }}>{{ role_labels[r] }}</option>{% endfor %}</select></td>
+        <td class="small">{% if c.personal %}<span class="badge badge-warning">personal data, not stored</span>{% elif c.source == 'saved' %}<span class="muted">from saved structure</span>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card mt">
+  <h2>2. Assessments</h2>
+  <p class="small muted">Check each type, weight and maximum mark. Order is chronological and is used for trend features. Weights must add up to 100%. {% if llm %}Types the keyword rules could not place were suggested by an AI model (assessment names only were sent).{% endif %}</p>
+  <table class="compact" id="atable">
+    <thead><tr><th style="width:60px">Order</th><th>Name</th><th style="width:170px">Type</th><th style="width:90px">Weight %</th><th style="width:90px">Out of</th><th style="width:150px">Due date</th><th class="num">Reported class avg</th><th></th></tr></thead>
+    <tbody>
+    {% for a in mapping.assessments %}{% set i = loop.index0 %}
+      <tr>
+        <td><input type="number" name="a_order_{{ i }}" value="{{ a.order|int if a.order is not none }}" step="1" min="1"></td>
+        <td><input type="text" name="a_name_{{ i }}" value="{{ a.name }}"><span class="src">{% if a.no_data %}from saved structure, no marks in this file{% else %}column: {{ a.key }}{% endif %}</span></td>
+        <td><select name="a_type_{{ i }}">{% for t in TYPES %}<option {{ 'selected' if a.atype == t }}>{{ t }}</option>{% endfor %}</select><span class="src" style="{{ 'color:var(--warn-ink)' if a.type_source in ('llm', 'none') }}">{{ src_labels.get(a.type_source, '') }}</span></td>
+        <td><input type="number" name="a_weight_{{ i }}" value="{{ a.weight if a.weight is not none }}" step="0.1" min="0" class="w" {{ 'style=border-color:var(--crit)' if a.weight is none }}>{% if a.weight_estimated %}<span class="src" style="color:var(--warn-ink)">estimated from final marks</span>{% elif a.from_profile and 'weight' in a.from_profile %}<span class="src">saved structure</span>{% endif %}</td>
+        <td><input type="number" name="a_max_mark_{{ i }}" value="{{ a.max_mark }}" step="0.1" min="0">{% if a.max_assumed %}<label class="src"><input type="checkbox" name="a_confirm_max_{{ i }}" value="yes"> confirm 100</label>{% endif %}</td>
+        <td><input type="date" name="a_date_{{ i }}" value="{{ a.due_date or '' }}"></td>
+        <td class="num small">{{ a.class_avg if a.class_avg is not none else '-' }}</td>
+        <td>{% if a.no_data %}<label class="small" style="font-weight:400"><input type="checkbox" name="a_remove_{{ i }}" value="yes"> remove</label>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted">No assessment columns. Set at least one column to "Assessment marks" (wide) or map the assessment name and mark columns (long), then press Apply.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="small mt">Total weight: <b id="tw">0</b>%</p>
+</div>
+
+<div class="card mt">
+  <h2>3. Preview</h2>
+  <div class="table-wrap"><table class="preview-table">
+    <thead><tr>{% for c in mapping.columns %}<th>{{ c.col }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for r in preview %}<tr>{% for v in r %}<td>{{ v }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="small muted">First rows of the file as read. This preview is only shown to you and is discarded after saving or cancelling.</p>
+</div>
+
+<div class="row mt" style="position:sticky;bottom:0;background:var(--bg);padding:12px 0">
+  <button class="btn" name="action" value="validate">Apply changes and check again</button>
+  <button class="btn btn-primary" name="action" value="save" {{ 'disabled title="Fix the problems listed first"' if result.errors }}>Save dataset</button>
+  <button class="btn btn-danger" name="action" value="cancel" formnovalidate>Cancel upload</button>
+  {% if result.errors %}<span class="small" style="color:var(--crit-ink)">Saving is disabled until the problems above are fixed. Changes you make here are checked when you press Apply.</span>{% endif %}
+</div>
+</form>
+
+<script>
+function total() {
+  var t = 0; document.querySelectorAll('#atable input.w').forEach(function (i) { t += parseFloat(i.value) || 0; });
+  var el = document.getElementById('tw'); el.textContent = Math.round(t * 10) / 10;
+  el.style.color = Math.abs(t - 100) <= 0.5 ? 'var(--good-ink)' : 'var(--crit-ink)';
+}
+document.querySelectorAll('#atable input.w').forEach(function (i) { i.addEventListener('input', total); });
+document.querySelectorAll('#mapform input, #mapform select').forEach(function (el) {
+  el.addEventListener('change', function () {
+    var save = document.querySelector('button[value=save]');
+    save.disabled = true; save.title = 'Press Apply to check your changes first';
+  });
+});
+total();
+</script>
+{% endblock %}

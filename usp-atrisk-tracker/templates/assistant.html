@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Assistant | USP At Risk Tracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Assistant</h1>
+    <p class="sub-title">Ask about a course or a student in plain words. Answers are worked out from the course's own marks.</p>
+  </div>
+  {% if courses %}
+  <div class="row"><label for="course-pick" style="margin:0">Course</label>
+    <select id="course-pick">{% for c in courses %}<option value="{{ c.id }}" {{ 'selected' if c.id == course_id }}>{{ c.code }} {{ c.name }}</option>{% endfor %}</select></div>
+  {% endif %}
+</div>
+{% if not courses %}
+<div class="card empty"><h2>No courses yet</h2>{% if is_admin %}<p>Create a course and upload its marks first.</p><a class="btn btn-primary" href="{{ url_for('course_new') }}">Create a course</a>{% else %}<p>An administrator needs to give you access to a course first.</p>{% endif %}</div>
+{% else %}
+<div class="split" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr)">
+  <section class="panel flush chat-shell" aria-label="Conversation">
+    <div class="chat-log" id="page-log" aria-live="polite"></div>
+    <div class="suggest" id="page-suggest"></div>
+    <form class="chat-input" id="page-form">
+      <input type="text" id="page-q" placeholder="For example: who should I contact first?" autocomplete="off" aria-label="Your question" autofocus>
+      <button class="btn btn-primary">Ask</button>
+    </form>
+  </section>
+  <aside class="card">
+    <h2>Things you can ask</h2>
+    <ul class="points" id="examples">
+      {% for ex in ["Who should I contact first?", "Give me a class summary", "Who missed submissions?", "Whose marks are falling?",
+                    "Who cannot pass?", "Which assessment is hardest?", "How accurate are the predictions?"] %}
+      <li><a href="#" data-q="{{ ex }}">{{ ex }}</a></li>
+      {% endfor %}
+    </ul>
+    <p class="small muted mt">About one student: type their code (or real student ID) with a question, such as "why is OU0012345 at risk", "what does she need to pass", "what if he gets 70%" or "write an email to them". Follow-up questions remember the last student.</p>
+  </aside>
+</div>
+<script src="{{ url_for('static', filename='assistant.js') }}?v=3"></script>
+<script>
+  var chat = AtRiskChat.mount({ log: "page-log", form: "page-form", input: "page-q", suggest: "page-suggest",
+                                course: "course-pick", endpoint: "{{ url_for('api_ask_any') }}" });
+  document.querySelectorAll("#examples a").forEach(function (a) {
+    a.addEventListener("click", function (e) { e.preventDefault(); chat.ask(a.dataset.q); });
+  });
+</script>
+{% endif %}
+{% endblock %}

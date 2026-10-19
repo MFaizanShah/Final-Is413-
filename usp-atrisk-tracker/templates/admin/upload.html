@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Upload marks | USP At Risk Tracker{% endblock %}
+{% block content %}
+{% set chosen = (courses|selectattr('id', 'equalto', course_id)|first) if course_id else none %}
+{% if kind == 'current' %}{% set step = 2 %}{% include "_steps.html" %}{% endif %}
+<h1>Upload marks</h1>
+<p class="lede-note">Most files work as they are. The columns are detected automatically and you check them on the next screen before anything is saved.</p>
+
+<div class="split">
+  <section class="card">
+    <form method="post" enctype="multipart/form-data">
+      <div class="field"><label for="course">Course</label>
+        <select id="course" name="course_id" required style="width:100%">
+          <option value="">Choose a course</option>
+          {% for c in courses %}<option value="{{ c.id }}" {{ 'selected' if c.id == course_id }}>{{ c.code }} {{ c.name }}</option>{% endfor %}
+          {% if library %}<optgroup label="Training library (past results only)">
+          {% for c in library %}<option value="{{ c.id }}" {{ 'selected' if c.id == course_id }}>{{ c.code }} {{ c.name }}</option>{% endfor %}</optgroup>{% endif %}
+        </select>
+        <div class="hint">Not listed? <a href="{{ url_for('course_new') }}">Add the course first.</a></div></div>
+      <div class="field"><label>What is in the file?</label>
+        <label style="font-weight:400;display:block;margin:6px 0"><input type="radio" name="kind" value="current" {{ 'checked' if kind != 'historical' }}> <b>This semester's marks so far.</b> The system works out who is at risk. Replaces the course's current class.</label>
+        <label style="font-weight:400;display:block;margin:6px 0"><input type="radio" name="kind" value="historical" {{ 'checked' if kind == 'historical' }}> <b>A past cohort with final results.</b> Teaches the model; it retrains in the background.</label></div>
+      <div class="field"><label for="label">Semester or cohort name <span class="muted" style="font-weight:400">(optional)</span></label><input id="label" type="text" name="label" placeholder="Semester 2, 2026" style="width:100%">
+        <div class="hint">Uploading again with the same name keeps the earlier version, so you can roll back.</div></div>
+      <div class="field"><label for="file">File (.csv or .xlsx)</label><input id="file" type="file" name="file" accept=".csv,.xlsx,.xls" required></div>
+      <button class="btn btn-primary">Read the file</button>
+    </form>
+  </section>
+  <section class="card">
+    <h2>What a file should look like</h2>
+    <p class="small">One row per student and one column per assessment, with the weight in the column heading:</p>
+    <div class="table-wrap" style="margin-bottom:12px"><table class="compact preview-table">
+      <thead><tr><th>student_id</th><th>Quiz 1 (10%)</th><th>Assignment 1 (20%) /40</th><th>Final Exam (50%)</th></tr></thead>
+      <tbody><tr><td>S11000001</td><td>8</td><td>31</td><td></td></tr><tr><td>S11000002</td><td>6</td><td>22</td><td></td></tr></tbody></table></div>
+    <ul class="reason-list small">
+      <li>A blank cell means not marked yet. 0, NS or ABS mean not submitted.</li>
+      <li><span class="mono">/40</span> in a heading means marks are out of 40; they are turned into percentages.</li>
+      <li>One row per mark (long layout) also works, as do <span class="mono">Weight</span> and <span class="mono">Out of</span> rows under the heading.</li>
+      <li>Past cohorts also need a <span class="mono">final_grade</span> (A+ to D, or Pass/Fail) or <span class="mono">final_mark</span> column.</li>
+    </ul>
+    <p class="small"><b>Privacy:</b> student IDs are replaced with codes when you save. Names, emails and other personal columns are never stored.</p>
+    <div class="row">
+      <a class="btn btn-sm" href="{{ url_for('admin_template', kind='current') }}">Download a template</a>
+      <a class="btn btn-sm" href="{{ url_for('admin_template', kind='historical') }}">Template for past cohorts</a>
+      <a class="btn btn-sm" href="{{ url_for('static', filename='examples/IS413_semester_marks.csv') }}">Example file to try</a>
+    </div>
+  </section>
+</div>
+{% endblock %}

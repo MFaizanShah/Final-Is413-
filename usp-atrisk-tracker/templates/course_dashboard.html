@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}{{ course.code }} | USP At Risk Tracker{% endblock %}
+{% block content %}
+{% if uploaded %}{% set step = 3 %}{% include "_steps.html" %}{% endif %}
+<nav class="crumbs no-print"><a href="{{ url_for('overview') }}">Home</a> / {{ course.code }}</nav>
+<div class="page-head">
+  <div>
+    <h1>{{ course.code }} {{ course.name }}</h1>
+    {% set marked = summary.per_assessment|selectattr('graded')|list|length if summary else 0 %}
+    <p class="meta">{{ course.semester }}{% if course.campus %}, {{ course.campus }}{% endif %}{% if assessments %}. {{ marked }} of {{ assessments|length }} assessments marked
+      ({% for t, items in assessments|groupby('atype') %}{{ items|length }} {{ t|lower }}{{ ', ' if not loop.last }}{% endfor %}).{% endif %}</p>
+  </div>
+  <div class="row no-print">
+    <a class="btn" href="{{ url_for('individual', course_id=course.id) }}">What-if analysis</a>
+    <a class="btn" href="{{ url_for('export', course_id=course.id, status='At Risk') }}">Export at risk list</a>
+    {% if is_admin %}<a class="btn" href="{{ url_for('admin_course', course_id=course.id) }}">Thresholds and data</a>{% endif %}
+  </div>
+</div>
+
+{% if not assessments or not summary.n %}
+{% if is_admin %}{% set step = 2 %}{% include "_steps.html" %}{% endif %}
+<section class="card">
+  <h2>Waiting for this semester's marks</h2>
+  {% if is_admin %}<p>Upload the marks so far to see who is at risk. A blank cell means not marked yet.</p>
+  {% else %}<p>An administrator uploads the marks. Results appear here as soon as they do. You can send them the marksheet template below to fill in.</p>{% endif %}
+  <div class="row">
+    {% if is_admin %}<a class="btn btn-primary" href="{{ url_for('admin_upload', course_id=course.id, kind='current') }}">Upload marks</a>{% endif %}
+    <a class="btn" href="{{ url_for('marks_template', course_id=course.id) }}">Download the marksheet template</a>
+  </div>
+</section>
+{% if planned and planned.assessments %}
+<section class="panel flush mt">
+  <div class="panel-head"><h2>Assessments from the course outline</h2>{% if planned.filename %}<span class="small muted">Read from {{ planned.filename }}</span>{% endif %}</div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Assessment</th><th>Type</th><th class="num">Weight</th><th class="num">Marked out of</th><th>Due</th></tr></thead>
+    <tbody>{% for a in planned.assessments %}
+      <tr><td>{{ a.name }}</td><td>{{ a.atype }}</td><td class="num">{{ '%g'|format(a.weight) }}%</td><td class="num">{{ '%g'|format(a.max_mark) }}</td><td>{{ a.due or '' }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  </div>
+  <div class="panel-foot">Total {{ '%g'|format(planned.assessments|sum(attribute='weight')) }}%. At risk from {{ '%.0f'|format(course.risk_threshold * 100) }}% chance of failing, borderline from {{ '%.0f'|format(course.borderline_threshold * 100) }}%.</div>
+</section>
+{% endif %}
+{% else %}
+{% set c = summary.counts %}{% set n = summary.n %}{% set ac = summary.arith_counts %}{% set mc = summary.model_counts %}
+{% if uploaded %}<div class="flash flash-success">Results for the {{ n }} students you uploaded are ready. Every student went through both checks below.</div>{% endif %}
+
+<p class="lede">
+  {% if c['At Risk'] %}<span class="risk">{{ c['At Risk'] }} of {{ n }} students are at risk of failing</span>{% else %}None of the {{ n }} students are at risk of failing{% endif %}{% if c['Borderline'] %}, and {{ c['Borderline'] }} more are borderline{% endif %}.
+</p>
+
+<div class="grid grid-5 mb mt">
+  <div class="kpi accent"><div class="label">Students</div><div class="value">{{ n }}</div><div class="note">{{ summary.evaluated }} with marks</div></div>
+  <a class="kpi" href="?status=At+Risk" style="text-decoration:none;color:inherit"><div class="label"><i class="dot dot-danger"></i>At risk</div><div class="value" style="color:var(--risk-ink)">{{ c['At Risk'] }}</div><div class="note">{{ '%.0f'|format(100 * c['At Risk'] / n) }}% of the class</div></a>
+  <a class="kpi" href="?status=Borderline" style="text-decoration:none;color:inherit"><div class="label"><i class="dot dot-warning"></i>Borderline</div><div class="value">{{ c['Borderline'] }}</div><div class="note">monitor closely</div></a>
+  <div class="kpi"><div class="label">Class average so far</div><div class="value">{{ summary.class_avg }}%</div><div class="note">weighted by assessment</div></div>
+  <div class="kpi"><div class="label">Predicted pass rate</div><div class="value">{{ '%.0f'|format(summary.pass_rate) }}%</div><div class="note">{% if summary.history.pass_rate is not none %}past cohorts {{ '%.0f'|format(summary.history.pass_rate * 100) }}%{% else %}no past cohorts for this course{% endif %}</div></div>
+</div>
+
+<section class="checks" aria-label="How the two checks were applied">
+  <div class="check decided">
+    <div class="step">Check 1</div>
+    <h3>Arithmetic from the weights</h3>
+    <p>What is still mathematically possible for each student, with no prediction involved.</p>
+    <div class="split-row">
+      <span><i class="dot dot-danger"></i> Cannot reach 50% <b>{{ ac['Cannot pass'] }}</b></span>
+      <span><i class="dot dot-success"></i> Pass already secured <b>{{ ac['Pass secured'] }}</b></span>
+      <span><i class="dot dot-neutral"></i> Still open <b>{{ ac['Still open'] }}</b></span>
+      {% if ac['Finished'] %}<span>Finished <b>{{ ac['Finished'] }}</b></span>{% endif %}
+    </div>
+  </div>
+  <div class="arrow" aria-hidden="true">&rarr;</div>
+  <div class="check">
+    <div class="step">Check 2, for the {{ ac['Still open'] }} still open</div>
+    <h3>{{ 'Random forest' if summary.trained else 'Simulation' }}</h3>
+    <p>Chance of failing, from how similar past students finished. At risk from {{ '%.0f'|format(course.risk_threshold * 100) }}%, borderline from {{ '%.0f'|format(course.borderline_threshold * 100) }}%{% if is_admin %} (<a href="{{ url_for('admin_course', course_id=course.id) }}">change</a>){% endif %}.</p>
+    <div class="split-row">
+      <span><i class="dot dot-danger"></i> At risk <b>{{ mc['At Risk'] }}</b></span>
+      <span><i class="dot dot-warning"></i> Borderline <b>{{ mc['Borderline'] }}</b></span>
+      <span><i class="dot dot-success"></i> On track <b>{{ mc['On Track'] }}</b></span>
+    </div>
+  </div>
+</section>
+
+{% set source = summary.source %}{% set drift = summary.drift %}
+{% include "_source.html" %}
+
+<div class="grid grid-2">
+  <section class="card">
+    <h2>Predicted final grades</h2>
+    <div id="c-grades"></div>
+    <p class="chart-foot">Most likely final grade for each student; D (fail) in red. Click a bar to list those students.{% if summary.trained %} Past results here were pass or fail, so passing grades are estimated from each student's average.{% endif %}</p>
+  </section>
+  <section class="card">
+    <h2>Current average and chance of failing</h2>
+    <div id="c-scatter"></div>
+    <p class="chart-foot">Each dot is a student. Hover for details; click to open their report.</p>
+  </section>
+  <section class="card">
+    <h2>Class average by assessment</h2>
+    <div id="c-assess"></div>
+    <p class="chart-foot">In course order.{% if summary.hardest %} Lowest so far: <b>{{ summary.hardest.name }}</b>, {{ summary.hardest.class_avg }}% with {{ summary.hardest.below_pass }} students under 50%.{% endif %}</p>
+  </section>
+  <section class="card">
+    <h2>Spread of current averages</h2>
+    <div id="c-hist"></div>
+    <p class="chart-foot">Students in each 10 point band of their weighted average so far; bands under 50% in red.</p>
+  </section>
+</div>
+
+{% set base = url_for('course_dashboard', course_id=course.id) %}
+<section class="panel flush mt" id="students">
+  <div class="panel-head">
+    <h2>Students</h2>
+    <div class="filters">
+      <a class="chip {{ 'active' if not status_filter and not grade_filter }}" href="{{ base }}#students">All {{ n }}</a>
+      <a class="chip {{ 'active' if status_filter == 'At Risk' }}" href="{{ base }}?status=At+Risk#students"><i class="dot dot-danger"></i>At risk {{ c['At Risk'] }}</a>
+      <a class="chip {{ 'active' if status_filter == 'Borderline' }}" href="{{ base }}?status=Borderline#students"><i class="dot dot-warning"></i>Borderline {{ c['Borderline'] }}</a>
+      <a class="chip {{ 'active' if status_filter == 'On Track' }}" href="{{ base }}?status=On+Track#students"><i class="dot dot-success"></i>On track {{ c['On Track'] }}</a>
+      {% if grade_filter %}<a class="chip active" href="{{ base }}#students">Predicted {{ grade_filter }} &times;</a>{% endif %}
+    </div>
+    <span class="spacer"></span>
+    <form class="search no-print" method="get" role="search" action="{{ base }}#students">
+      {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+      <input type="search" name="q" value="{{ q }}" placeholder="Student ID or code" aria-label="Student ID">
+      <button class="btn btn-sm">Find</button>
+    </form>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr>
+      <th>Student</th><th>Status</th><th class="num">Average</th><th>Check 1</th><th>Check 2: chance of failing</th>
+      <th>Predicted</th><th>Best possible</th><th class="num">Needs to pass</th><th>What stands out</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}{% set href = url_for('student_view', course_id=course.id, student_id=r.student_id) %}
+      <tr class="row-link" onclick="location.href='{{ href }}'">
+        <td><a class="mono" href="{{ href }}">{{ r.student_id }}</a></td>
+        <td><span class="badge badge-{{ r.tone }}"><i class="dot dot-{{ r.tone }}"></i>{{ r.status }}</span></td>
+        <td class="num">{{ '%.0f'|format(r.current_avg) ~ '%' if r.current_avg is not none else '-' }}</td>
+        <td class="small nowrap">{% if r.checks %}{% set a = r.checks.arithmetic %}<span class="{{ 'diff-neg' if a.verdict == 'Cannot pass' else 'diff-pos' if a.verdict == 'Pass secured' else 'muted' }}">{{ 'Open' if a.verdict == 'Still open' else a.verdict }}</span>{% endif %}</td>
+        <td>{% if r.checks and r.checks.arithmetic.decides %}<span class="small muted">not needed</span>
+          {% elif r.p_fail is not none %}{% set pc = r.p_fail * 100 %}
+          <div class="chance"><div class="bar"><i style="width:{{ pc }}%;background:{{ 'var(--risk)' if r.status == 'At Risk' else 'var(--watch)' if r.status == 'Borderline' else 'var(--ok)' }}"></i></div><b>{{ '%.0f'|format(pc) }}%</b></div>
+          {% else %}<span class="muted">-</span>{% endif %}</td>
+        <td>{% if r.predicted_grade %}<span class="grade-pill {{ 'fail' if r.predicted_grade == 'D' }}">{{ r.predicted_grade }}</span>{% else %}-{% endif %}</td>
+        <td><span class="grade-pill {{ 'fail' if r.best_grade == 'D' }}">{{ r.best_grade }}</span></td>
+        <td class="num">{% if r.complete %}<span class="muted">done</span>{% elif not r.feasible %}<span class="diff-neg">not possible</span>{% elif r.required_for_pass is not none %}{{ '%.0f'|format([r.required_for_pass, 0]|max) }}%{% endif %}</td>
+        <td class="reason">{{ r.concern or (r.reasons[0] if r.reasons) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="muted" style="padding:24px">No students match. {% if q %}Check the ID, or <a href="{{ base }}">show everyone</a>.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="panel-foot">
+    <span>{{ n_rows }} student{{ 's' if n_rows != 1 }}{% if pages > 1 %}, page {{ page }} of {{ pages }}{% endif %}. At risk first, then by chance of failing.</span>
+    <span class="spacer"></span>
+    {% if pages > 1 %}
+    <nav class="pager" aria-label="Pages">
+      {% set args = {} %}{% if status_filter %}{% set _ = args.update({'status': status_filter}) %}{% endif %}{% if grade_filter %}{% set _ = args.update({'grade': grade_filter}) %}{% endif %}{% if q %}{% set _ = args.update({'q': q}) %}{% endif %}
+      {% if page > 1 %}<a href="{{ url_for('course_dashboard', course_id=course.id, page=page - 1, **args) }}#students">Previous</a>{% endif %}
+      {% set ns = namespace(last=0) %}
+      {% for p in range(1, pages + 1) if p <= 1 or p >= pages or (p - page)|abs <= 1 %}
+        {% if p - ns.last > 1 %}<span class="gap">&hellip;</span>{% endif %}{% set ns.last = p %}
+        {% if p == page %}<span class="current">{{ p }}</span>
+        {% else %}<a href="{{ url_for('course_dashboard', course_id=course.id, page=p, **args) }}#students">{{ p }}</a>{% endif %}
+      {% endfor %}
+      {% if page < pages %}<a href="{{ url_for('course_dashboard', course_id=course.id, page=page + 1, **args) }}#students">Next</a>{% endif %}
+    </nav>
+    {% endif %}
+  </div>
+</section>
+<p class="small muted mt">Students appear as pseudonymous codes. Type a real student ID into the search box to find someone; IDs are matched securely and never stored.</p>
+
+<script>
+(function () {
+  var C = USPCharts.colors, grades = {{ GRADES|tojson }}, dist = {{ summary.grade_dist|tojson }};
+  var base = "{{ base }}";
+  USPCharts.bar(document.getElementById("c-grades"), {
+    labels: grades, height: 250, directLabels: true, valueFormat: function (v) { return Math.round(v); },
+    series: [{ name: "Students", values: grades.map(function (g) { return dist[g]; }), color: C.s1,
+               colors: grades.map(function (g) { return g === "D" ? C.crit : C.s1; }) }],
+    extra: grades.map(function (g) { return g === "D" ? "Fail grade" : ""; }),
+    onClick: function (i) { window.location = base + "?grade=" + encodeURIComponent(grades[i]) + "#students"; }
+  });
+  var statusColor = { "At Risk": C.crit, "Borderline": C.warn, "On Track": C.good };
+  var pts = {{ summary.scatter|tojson }};
+  USPCharts.scatter(document.getElementById("c-scatter"), {
+    height: 250, xMax: 100, yMax: 100, xLabel: "Current weighted average (%)", yLabel: "Chance of failing (%)",
+    groups: [{ name: "At risk", color: C.crit }, { name: "Borderline", color: C.warn }, { name: "On track", color: C.good }],
+    refX: [{ value: 50, label: "Pass mark" }],
+    refY: [{ value: {{ course.risk_threshold * 100 }}, label: "At risk threshold" }],
+    points: pts.map(function (p) { return { x: p.x, y: p.y, color: statusColor[p.status], label: p.label,
+      html: "<br>Average " + p.x + "%<br>Chance of failing " + p.y + "%<br>" + p.status,
+      href: "{{ url_for('student_view', course_id=course.id, student_id='__ID__') }}".replace("__ID__", encodeURIComponent(p.label)) }; })
+  });
+  var pa = {{ summary.per_assessment|tojson }};
+  USPCharts.bar(document.getElementById("c-assess"), {
+    labels: pa.map(function (a) { return a.name; }),
+    series: [{ name: "Class average", color: C.s1, values: pa.map(function (a) { return a.class_avg; }) }],
+    max: 100, height: 260, valueFormat: function (v) { return v.toFixed(1) + "%"; },
+    extra: pa.map(function (a) { return a.atype + ", " + a.weight + "% of the course. " + (a.graded ? a.graded + " marked, " + a.below_pass + " under 50%" + (a.zeros ? ", " + a.zeros + " not submitted" : "") : "Not marked yet"); }),
+    refLine: { value: 50, label: "Pass mark" }
+  });
+  var hist = {{ summary.hist|tojson }};
+  USPCharts.bar(document.getElementById("c-hist"), {
+    labels: hist.labels, height: 260, directLabels: true, valueFormat: function (v) { return Math.round(v); },
+    series: [{ name: "Students", values: hist.values, color: C.s1, colors: hist.labels.map(function (l, i) { return i < 5 ? C.crit : C.s1; }) }]
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

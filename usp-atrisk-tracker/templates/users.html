@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block crumbs %}<b>Account</b>{% endblock %}
+{% block content %}
+<h1>{{ 'Users and password' if g.user.role == 'admin' else 'Change password' }}</h1>
+<p class="sub-title">Signed in as {{ g.user.username }}.</p>
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Change your password</h2>
+    <form method="post"><input type="hidden" name="action" value="password">
+      <div class="field"><label>New password</label><input type="password" name="password" minlength="6" required></div>
+      <button class="btn btn-primary">Change password</button>
+    </form>
+  </div>
+  {% if g.user.role == 'admin' %}
+  <div class="card">
+    <h2>Add a user</h2>
+    <form method="post"><input type="hidden" name="action" value="create">
+      <div class="grid grid-2">
+        <div class="field"><label>Username</label><input type="text" name="username" required></div>
+        <div class="field"><label>Full name</label><input type="text" name="full_name"></div>
+        <div class="field"><label>Password</label><input type="password" name="password" minlength="6" required></div>
+        <div class="field"><label>Role</label><select name="role"><option value="lecturer">Lecturer</option><option value="admin">Administrator</option></select></div>
+      </div>
+      <button class="btn btn-primary">Add user</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% if users %}
+<div class="card mt">
+  <h2>Users</h2>
+  <table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th></th></tr></thead><tbody>
+  {% for u in users %}<tr><td>{{ u.username }}</td><td>{{ u.full_name }}</td><td>{{ u.role|capitalize }}</td>
+    <td>{% if u.role != 'admin' %}<form method="post" onsubmit="return confirm('Remove {{ u.username }}?')"><input type="hidden" name="action" value="delete"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="btn btn-sm btn-danger">Remove</button></form>{% endif %}</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+{% endif %}
+{% endblock %}

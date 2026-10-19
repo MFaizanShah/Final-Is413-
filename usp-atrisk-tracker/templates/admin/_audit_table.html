@@ -1,0 +1,9 @@
+<table class="compact">
+  <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Course</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for a in audit %}
+    <tr><td class="small" style="white-space:nowrap">{{ a.at }}</td><td>{{ a.username }}</td><td class="small mono">{{ a.action }}</td>
+      <td class="small">{{ a.course_code or '' }}</td><td class="small" style="max-width:520px">{{ a.detail.split('\n')[0] if a.detail }}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">Nothing recorded yet.</td></tr>{% endfor %}
+  </tbody>
+</table>

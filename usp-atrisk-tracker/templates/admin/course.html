@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Manage {{ course.code }} | USP At Risk Tracker{% endblock %}
+{% block crumbs %}Admin / <a href="{{ url_for('admin_home') }}">Courses</a> / <b>{{ course.code }}</b>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ course.code }} {{ course.name }}</h1>
+    <p class="sub-title">Course settings, lecturer access, assessment structure and dataset versions.</p>
+  </div>
+  <div class="row">
+    <a class="btn" href="{{ url_for('course_dashboard', course_id=course.id) }}">View results</a>
+    <a class="btn btn-primary" href="{{ url_for('admin_upload', course_id=course.id) }}">Upload data</a>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Details and risk thresholds</h2>
+    <form method="post">
+      <input type="hidden" name="action" value="details">
+      <div class="grid grid-2">
+        <div class="field"><label>Code</label><input type="text" name="code" value="{{ course.code }}" style="width:100%"></div>
+        <div class="field"><label>Semester</label><input type="text" name="semester" value="{{ course.semester }}" style="width:100%"></div>
+      </div>
+      <div class="field"><label>Name</label><input type="text" name="name" value="{{ course.name }}" style="width:100%"></div>
+      <div class="field"><label>Campus</label><input type="text" name="campus" value="{{ course.campus }}" style="width:100%"></div>
+      <div class="field"><label>At risk when chance of D is at least <span id="rt">{{ '%.0f'|format(course.risk_threshold * 100) }}</span>%</label>
+        <input type="range" name="risk_threshold" min="5" max="90" step="1" value="{{ '%.0f'|format(course.risk_threshold * 100) }}" oninput="rt.textContent=this.value" style="width:100%"></div>
+      <div class="field"><label>Borderline when chance of D is at least <span id="bt">{{ '%.0f'|format(course.borderline_threshold * 100) }}</span>%</label>
+        <input type="range" name="borderline_threshold" min="1" max="80" step="1" value="{{ '%.0f'|format(course.borderline_threshold * 100) }}" oninput="bt.textContent=this.value" style="width:100%">
+        <div class="hint">A lower threshold flags more students earlier. A higher threshold flags fewer students but may miss some.</div></div>
+      <button class="btn btn-primary">Save settings</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Lecturer access</h2>
+    <p class="small muted">Assigned lecturers can view results for this course, read only. They cannot upload or change data.</p>
+    <form method="post">
+      <input type="hidden" name="action" value="lecturers">
+      {% for u in users if u.role == 'lecturer' %}
+        <label style="display:block;font-weight:400;margin:4px 0"><input type="checkbox" name="lecturer" value="{{ u.id }}" {{ 'checked' if u.id in lecturers }}> {{ u.full_name or u.username }} <span class="small muted">{{ u.username }}</span></label>
+      {% else %}<p class="muted small">No lecturer accounts yet. Add them on the <a href="{{ url_for('users') }}">Users</a> page.</p>{% endfor %}
+      <button class="btn mt">Save access</button>
+    </form>
+    <h2 class="mt" style="margin-top:22px">History</h2>
+    <p class="small">{% if history.n %}{{ history.n }} past students with outcomes in {{ history.cohorts }} cohort(s), pass rate {{ '%.0f'|format(history.pass_rate * 100) }}%.{% else %}No past cohorts of this course yet. Its students are scored by the random forest trained on the training library. Uploading past cohorts of this course (with final results) retrains the model and makes its predictions a closer match.{% endif %}</p>
+    <form method="post" class="mt" onsubmit="return confirm('Delete {{ course.code }} with all its datasets? This cannot be undone.')">
+      <input type="hidden" name="action" value="delete"><button class="btn btn-danger btn-sm">Delete this course</button>
+    </form>
+  </div>
+</div>
+
+<div class="card mt">
+  <h2>Current assessment structure</h2>
+  {% if assessments %}
+  <p class="small muted">Taken from the active current semester dataset, in chronological order. Types drive weakness analysis, support suggestions and the type features used by the model. Changing a type here keeps all marks.</p>
+  <form method="post"><input type="hidden" name="action" value="types">
+    <table class="compact">
+      <thead><tr><th>#</th><th>Assessment</th><th class="num">Weight</th><th class="num">Out of</th><th>Due</th><th>Type</th></tr></thead>
+      <tbody>{% for a in assessments %}
+        <tr><td>{{ loop.index }}</td><td>{{ a.name }}</td><td class="num">{{ a.weight|round(1) }}%</td><td class="num">{{ a.max_mark|round(1) }}</td><td class="small">{{ a.due_date or '' }}</td>
+          <td><select name="type_{{ a.id }}">{% for t in TYPES %}<option {{ 'selected' if a.atype == t }}>{{ t }}</option>{% endfor %}</select></td></tr>
+      {% endfor %}</tbody>
+    </table>
+    <button class="btn mt">Save types</button>
+  </form>
+  {% else %}<p class="muted">No current semester data yet. Upload a file to define the structure.</p>{% endif %}
+  {% if profile %}<p class="small muted mt">A saved structure for {{ course.code }} ({{ profile.assessments|length }} assessments, {{ profile.layout }} layout) is applied automatically to the next upload, and shown for confirmation.</p>{% endif %}
+</div>
+
+<div class="card mt">
+  <h2>Dataset versions</h2>
+  <p class="small muted">Each upload is kept as a version. Activate an earlier version to roll back. Activating or deactivating historical data retrains the model.</p>
+  <table class="compact">
+    <thead><tr><th>Kind</th><th>Label</th><th>Version</th><th>File</th><th>Uploaded</th><th class="num">Students</th><th class="num">With outcome</th><th>Status</th><th></th></tr></thead>
+    <tbody>{% for d in datasets %}
+      <tr><td>{{ 'Current' if d.kind == 'current' else 'Historical' }}</td><td>{{ d.label }}</td><td>v{{ d.version }}</td><td class="small">{{ d.filename }}</td>
+        <td class="small">{{ d.uploaded_at }}<br><span class="muted">{{ d.uploaded_by }}</span></td><td class="num">{{ d.n_rows }}</td><td class="num">{{ d.n_with_outcome if d.kind == 'historical' else '-' }}</td>
+        <td>{% if d.is_active %}<span class="badge badge-success">Active</span>{% else %}<span class="badge badge-neutral">Inactive</span>{% endif %}</td>
+        <td>{% if d.is_active %}<form method="post" action="{{ url_for('admin_dataset', dataset_id=d.id, action='deactivate') }}" onsubmit="return confirm('Deactivate this dataset?')"><button class="btn btn-sm">Deactivate</button></form>
+            {% else %}<form method="post" action="{{ url_for('admin_dataset', dataset_id=d.id, action='activate') }}"><button class="btn btn-sm">Activate (roll back)</button></form>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="9" class="muted">No datasets uploaded.</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+
+<div class="card mt">
+  <h2>Activity for {{ course.code }}</h2>
+  {% include "admin/_audit_table.html" %}
+</div>
+{% endblock %}

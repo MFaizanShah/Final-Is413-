@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Home | USP At Risk Tracker{% endblock %}
+{% block content %}
+{% if not cards %}
+{% if is_admin %}
+{% set step = 1 %}{% include "_steps.html" %}
+<h1>Add your first course</h1>
+<p class="lede-note">The system has already learned from {{ '{:,}'.format(version.summary.n_students) if version else 'past' }} students with known results. Upload a course outline to set up the course, choose when it should warn you, then upload this semester's marks: every student is checked first with arithmetic from the weights, then by the random forest.</p>
+<div class="row">
+  <a class="btn btn-primary" href="{{ url_for('course_new') }}">Add a course from its outline</a>
+  <a class="btn" href="{{ url_for('static', filename='examples/IS413_semester_marks.csv') }}">Download an example marks file</a>
+</div>
+{% else %}
+{% set step = 1 %}{% include "_steps.html" %}
+<h1>Add your first course</h1>
+<p class="lede-note">Upload your course outline and the course is set up from it: the assessments, their weights and marks out of. Once the marks are uploaded you will see which students need support.</p>
+<a class="btn btn-primary" href="{{ url_for('course_new') }}">Add a course from its outline</a>
+{% endif %}
+{% else %}
+{% set n = totals.students or 1 %}
+<h1>Welcome back{{ ', ' ~ (g.user.full_name or g.user.username).split(' ')[0] if g.user.full_name or g.user.username }}</h1>
+<p class="lede">
+  {% if totals['At Risk'] %}<span class="risk">{{ '{:,}'.format(totals['At Risk']) }} of your {{ '{:,}'.format(totals.students) }} students</span> are at risk of failing, and {{ '{:,}'.format(totals['Borderline']) }} more need watching.
+  {% else %}None of your {{ totals.students }} students are currently at risk.{% endif %}
+</p>
+<p class="lede-note">Across {{ cards|length }} course{{ 's' if cards|length != 1 }}. Figures update whenever new marks are uploaded.</p>
+<div class="statusbar" role="img" aria-label="{{ totals['At Risk'] }} at risk, {{ totals['Borderline'] }} borderline, {{ totals['On Track'] }} on track">
+  <span class="s-risk" style="flex:{{ totals['At Risk'] }}"></span><span class="s-watch" style="flex:{{ totals['Borderline'] }}"></span><span class="s-ok" style="flex:{{ totals['On Track'] }}"></span>{% if totals['No data'] %}<span class="s-none" style="flex:{{ totals['No data'] }}"></span>{% endif %}
+</div>
+<div class="status-legend">
+  <span><i class="dot dot-danger"></i>At risk <b>{{ '{:,}'.format(totals['At Risk']) }}</b></span>
+  <span><i class="dot dot-warning"></i>Borderline <b>{{ totals['Borderline'] }}</b></span>
+  <span><i class="dot dot-success"></i>On track <b>{{ '{:,}'.format(totals['On Track']) }}</b></span>
+</div>
+
+{% if priority %}
+<section class="panel flush mb">
+  <div class="panel-head"><h2>Contact these students first</h2>
+    <span class="small muted">At risk, but a pass is still realistic (70% or less needed on the rest), so help now can change the outcome.</span></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Student</th><th>Course</th><th>Chance of failing</th><th class="num">Needs on the rest</th><th>What stands out</th></tr></thead>
+    <tbody>
+    {% for it in priority %}{% set r = it.row %}
+      <tr class="row-link" onclick="location.href='{{ url_for('student_view', course_id=it.course.id, student_id=r.student_id) }}'">
+        <td><a class="mono" href="{{ url_for('student_view', course_id=it.course.id, student_id=r.student_id) }}">{{ r.student_id }}</a></td>
+        <td>{{ it.course.code }}</td>
+        <td><div class="chance"><div class="bar"><i style="width:{{ (r.p_fail or 0) * 100 }}%;background:var(--risk)"></i></div><b>{{ '%.0f'|format((r.p_fail or 0) * 100) }}%</b></div></td>
+        <td class="num">{{ '%.0f'|format([r.required_for_pass or 0, 0]|max) }}%</td>
+        <td class="reason">{{ r.concern or (r.reasons[0] if r.reasons) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+<h2 class="mt">Your courses</h2>
+<div class="course-list">
+  {% for card in cards %}{% set s = card.summary %}
+  <a class="course-tile" href="{{ url_for('course_dashboard', course_id=card.course.id) }}">
+    <div class="code">{{ card.course.code }}</div>
+    <div class="name">{{ card.course.name }}</div>
+    {% if s.evaluated %}
+    <div class="line">{% if s.counts['At Risk'] %}<b>{{ s.counts['At Risk'] }} at risk</b>{% else %}Nobody at risk{% endif %}, {{ s.counts['Borderline'] }} borderline, of {{ '{:,}'.format(s.n) }} students</div>
+    <div class="statusbar" aria-hidden="true">
+      <span class="s-risk" style="flex:{{ s.counts['At Risk'] }}"></span><span class="s-watch" style="flex:{{ s.counts['Borderline'] }}"></span><span class="s-ok" style="flex:{{ s.counts['On Track'] }}"></span>
+    </div>
+    <div class="small muted">Class average {{ s.class_avg }}%, {{ s.per_assessment|selectattr('graded')|list|length }} of {{ card.n_assessments }} assessments marked</div>
+    {% else %}
+    <div class="line muted">No current marks uploaded yet.</div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

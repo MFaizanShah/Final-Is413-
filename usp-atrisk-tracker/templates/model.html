@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}How predictions work | USP At Risk Tracker{% endblock %}
+{% block content %}
+{% if training %}<meta http-equiv="refresh" content="10">{% endif %}
+<div class="page-head">
+  <div>
+    <h1>How predictions work</h1>
+    <p class="meta">What the percentages mean, where they come from and how often they are right.</p>
+  </div>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('admin_models') }}" class="row no-print" onsubmit="return confirm('Retrain the model on all current history? This takes a few minutes.')">
+    <input type="hidden" name="action" value="retrain">
+    <button class="btn" {{ 'disabled' if training or not ready or not training_enabled }} title="{{ '' if training_enabled else 'Training is switched off on this hosted copy' }}">{{ 'Training now...' if training else 'Retrain the model' }}</button>
+  </form>
+  {% endif %}
+</div>
+{% if training %}<div class="flash flash-info">A new model version is training. This page refreshes by itself.</div>{% endif %}
+{% if load_error %}<div class="flash flash-error">{{ load_error }} Lecturer pages keep working from saved results, but new calculations fall back to estimates until this is fixed.</div>{% endif %}
+
+{% if version %}{% set m = version.metrics %}{% set s = version.summary %}{% set ev = m.evaluation[m.primary] %}{% set hc = ev.headline.calibrated %}
+
+<div class="split">
+  <section class="card">
+    <h2>In plain words</h2>
+    <ul class="points">
+      <li><span class="mark note" aria-hidden="true">&bull;</span><span>The system has learned from <b>{{ '{:,}'.format(s.n_students) }} past students</b> in {{ s.n_courses }} courses whose final results are known.</span></li>
+      <li><span class="mark note" aria-hidden="true">&bull;</span><span>For each of your students it looks at the marks so far, such as their average, how they compare with the class, missed work and whether marks are rising or falling, and finds how similar past students finished.</span></li>
+      <li><span class="mark note" aria-hidden="true">&bull;</span><span>"60% chance of failing" means that of 100 similar past students at the same point, about 60 failed. It is a prompt to check in, not a verdict.</span></li>
+      <li><span class="mark note" aria-hidden="true">&bull;</span><span>It works for any course, whatever its assessments are called or weighted. A course with no past results gets a simpler estimate, clearly labelled.</span></li>
+    </ul>
+  </section>
+  <section class="card">
+    <h2>How often is it right?</h2>
+    {% if reality %}{% set o = reality.overall %}
+    <p class="big-stat">{{ '%.0f'|format(o.recall * 100) }}%</p>
+    <p style="margin-top:4px">of students who went on to fail were flagged as at risk with only about half the coursework marked. This was checked against the real {{ reality.cohort }} cohort of {{ '{:,}'.format(o.students) }} students, after training on earlier cohorts only.</p>
+    <p class="small muted">Of the students it flagged, {{ '%.0f'|format(o.precision * 100) }}% did fail; most of the rest passed narrowly. {% if o.withdrawn %}A further {{ o.withdrawn }} students withdrew later; {{ o.withdrawn_flagged }} of them had been flagged.{% endif %}</p>
+    {% else %}
+    <p class="big-stat">{{ '%.0f'|format(hc.recall * 100) }}%</p>
+    <p>of students who failed were flagged at about half way, when tested on courses the model had never seen. Of those flagged, {{ '%.0f'|format(hc.precision * 100) }}% did fail.</p>
+    {% endif %}
+  </section>
+</div>
+
+{% if reality %}
+<section class="panel flush mt">
+  <div class="panel-head"><h2>Checked against what really happened</h2><span class="small muted">{{ reality.note }}</span></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Course</th><th class="num">Students</th><th class="num">Failed</th><th class="num">Flagged at risk</th><th class="num">Fails caught</th><th class="num">Flagged who failed</th><th class="num">Ranking quality (AUC)</th></tr></thead>
+    <tbody>{% for r in reality.courses %}
+      <tr><td>{{ r.course }}</td><td class="num">{{ '{:,}'.format(r.students) }}</td><td class="num">{{ r.failed }}</td><td class="num">{{ r.flagged }}</td>
+        <td class="num">{{ '%.0f'|format(r.recall * 100) }}%</td><td class="num">{{ '%.0f'|format(r.precision * 100) }}%</td><td class="num">{{ r.auc }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+<details class="more">
+  <summary>Technical detail <span class="muted small">algorithm choice, calibration, validation, model versions</span></summary>
+  <div class="inner">
+    <p class="small muted">Version {{ version.id }}{{ ' (active)' if version.is_active }}, trained {{ version.created_at }} by {{ version.created_by }}. Stored inside the database ({{ s.model_kb or '?' }} KB), so it is loaded once and never retrained on start.</p>
+    <div class="grid grid-4 mb">
+      <div class="kpi accent"><div class="label">Chosen algorithm</div><div class="value" style="font-size:18px">{{ s.algorithm }}</div><div class="note">compared with {{ s.compared_with|lower if s.compared_with else 'a baseline' }}</div></div>
+      <div class="kpi"><div class="label">ROC AUC</div><div class="value">{{ hc.roc_auc }}</div><div class="note">ranking of at risk students, 1.0 is perfect</div></div>
+      <div class="kpi"><div class="label">Brier score</div><div class="value">{{ hc.brier }}</div><div class="note">probability error, lower is better</div></div>
+      <div class="kpi"><div class="label">Calibration error</div><div class="value">{{ ev.calibration.calibrated.ece }}</div><div class="note">{{ ev.calibration.raw.ece }} before calibration ({{ s.calibration|lower }})</div></div>
+    </div>
+    {% if s.brier_scores %}<p class="small">Both algorithms were trained on the same folds and judged on courses they had not seen. Brier score: {% for k, v in s.brier_scores.items() %}{{ k }} {{ v }}{{ '; ' if not loop.last }}{% endfor %}. The lower score wins; a tie goes to the random forest, the simpler model to explain.</p>{% endif %}
+    <div class="grid grid-2">
+      <div><h3>Does a stated chance hold true?</h3><div id="c-cal"></div><p class="chart-foot">Held out students grouped by predicted chance of failing, against the share who actually failed.</p></div>
+      <div><h3>How early can it warn?</h3>{% if ev.stages %}<div id="c-stages"></div><p class="chart-foot">Ranking quality (AUC) by how much of the course had been assessed.</p>{% else %}<p class="muted">Not enough data per stage.</p>{% endif %}</div>
+    </div>
+    <h3 class="mt">Cross validation without leakage</h3>
+    <p class="small muted">Folds hold out whole courses or whole cohorts, so the model is always tested on courses and semesters it never saw.</p>
+    <table class="compact">
+      <thead><tr><th>Split</th><th>Model</th><th class="num">ROC AUC</th><th class="num">Recall</th><th class="num">Precision</th><th class="num">Accuracy</th><th class="num">Brier</th></tr></thead>
+      <tbody>
+      {% for key, e in m.evaluation.items() %}
+        {% for name, label in [('calibrated', s.algorithm), ('raw', (s.algorithm or '').replace(' (calibrated)', '') ~ ', before calibration'), ('other', (s.compared_with or 'Other') ~ ', calibrated')] %}{% set r = e.headline.get(name) %}{% if r %}
+        <tr><td class="small">{% if loop.first %}<b>{{ key|capitalize }}</b> ({{ e.folds }} folds){% endif %}</td>
+          <td>{{ label }}</td><td class="num">{{ r.roc_auc }}</td><td class="num">{{ '%.2f'|format(r.recall) }}</td><td class="num">{{ '%.2f'|format(r.precision) }}</td><td class="num">{{ '%.2f'|format(r.accuracy) }}</td><td class="num">{{ r.brier }}</td></tr>
+        {% endif %}{% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="grid grid-2 mt">
+      <div><h3>What the model pays attention to</h3><div id="c-imp"></div><p class="chart-foot">How much the chance of failing moves when each measure is reset to a typical value.</p></div>
+      <div><h3>Training data</h3>
+        <p class="small muted">{{ '{:,}'.format(s.n_students) }} students, {{ s.n_cohorts }} cohorts, {{ '{:,}'.format(s.n_rows) }} snapshots. Overall fail rate {{ '%.0f'|format(s.fail_rate * 100) }}%.</p>
+        <table class="compact"><thead><tr><th>Course</th><th class="num">Students</th><th class="num">Cohorts</th><th class="num">Fail rate</th></tr></thead>
+        <tbody>{% for d in s.data %}<tr><td>{{ d.course }}</td><td class="num">{{ '{:,}'.format(d.students) }}</td><td class="num">{{ d.cohorts }}</td><td class="num">{{ '%.0f'|format(d.fail_rate * 100) }}%</td></tr>{% endfor %}</tbody></table>
+      </div>
+    </div>
+    {% if versions %}
+    <h3 class="mt">Model versions</h3>
+    <table class="compact">
+      <thead><tr><th>Version</th><th>Trained</th><th>Why</th><th>Status</th><th class="num">Students</th><th class="num">AUC</th><th></th></tr></thead>
+      <tbody>{% for v in versions %}
+        <tr><td><a href="{{ url_for('model_view', version=v.id) }}">v{{ v.id }}</a></td><td class="small">{{ v.created_at }}</td><td class="small">{{ v.trigger }}</td>
+          <td>{% if v.status == 'ready' %}{% if v.is_active %}<span class="badge badge-success">Active</span>{% else %}<span class="badge badge-neutral">Ready</span>{% endif %}{% elif v.status == 'training' %}<span class="badge badge-info">Training</span>{% else %}<span class="badge badge-danger" title="{{ v.error }}">Failed</span>{% endif %}</td>
+          <td class="num">{{ '{:,}'.format(v.n_students) if v.n_students else '-' }}</td><td class="num">{{ v.summary.headline_auc if v.summary else '-' }}</td>
+          <td>{% if is_admin and v.status == 'ready' and not v.is_active %}<form method="post" action="{{ url_for('admin_models') }}"><input type="hidden" name="action" value="activate"><input type="hidden" name="model_id" value="{{ v.id }}"><button class="btn btn-sm">Use this version</button></form>{% endif %}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+    {% endif %}
+  </div>
+</details>
+
+<script>
+(function () {
+  var C = USPCharts.colors, m = {{ version.metrics|tojson }}, ev = m.evaluation[m.primary], drawn = false;
+  function draw() {
+    if (drawn) return; drawn = true;
+    var cal = ev.calibration.calibrated.table;
+    USPCharts.bar(document.getElementById("c-cal"), {
+      labels: cal.map(function (b) { return b.bin; }), max: 100, height: 240,
+      valueFormat: function (v) { return Math.round(v) + "%"; },
+      extra: cal.map(function (b) { return b.n + " snapshots"; }),
+      series: [{ name: "Predicted chance", color: C.s1, values: cal.map(function (b) { return b.predicted * 100; }) },
+               { name: "Actually failed", color: C.s2, values: cal.map(function (b) { return b.observed * 100; }) }]
+    });
+    if (ev.stages.length) {
+      USPCharts.line(document.getElementById("c-stages"), {
+        labels: ev.stages.map(function (s) { return s.stage; }), min: 50, max: 100, height: 240,
+        valueFormat: function (v) { return (v / 100).toFixed(2); },
+        series: [{ name: "Chosen model", color: C.s1, values: ev.stages.map(function (s) { return s.auc * 100; }) },
+                 { name: "Other algorithm", color: C.s2, values: ev.stages.map(function (s) { return (s.other_auc || s.forest_auc || 0) * 100; }) }]
+      });
+    }
+    var imp = m.importance.slice(0, 10);
+    USPCharts.bar(document.getElementById("c-imp"), {
+      horizontal: true, labelWidth: 190, directLabels: true, height: Math.max(200, imp.length * 28 + 40),
+      labels: imp.map(function (i) { return i.label; }), valueFormat: function (v) { return Math.round(v) + "%"; },
+      series: [{ name: "Share of influence", color: C.s1, values: imp.map(function (i) { return i.value * 100; }) }]
+    });
+  }
+  document.querySelector("details.more").addEventListener("toggle", function (e) { if (e.target.open) draw(); });
+})();
+</script>
+{% else %}
+<div class="card empty"><img src="{{ url_for('static', filename='logo.png') }}" alt=""><h2>No trained model yet</h2>
+  <p>Until past results are uploaded and a model is trained, every course uses a simpler, clearly labelled estimate.</p></div>
+{% endif %}
+{% endblock %}

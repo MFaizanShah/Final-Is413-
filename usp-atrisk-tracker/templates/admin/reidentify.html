@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block crumbs %}Admin / <b>Pseudonym key</b>{% endblock %}
+{% block content %}
+<h1>Pseudonym key</h1>
+<p class="sub-title">The system stores only pseudonymous codes. To match results back to students, upload a class list you already hold and download it with each student's code added. The file is processed in memory and nothing is stored; the request is recorded in the audit log.</p>
+<div class="card" style="max-width:640px">
+  <form method="post" enctype="multipart/form-data">
+    <div class="field"><label>Course</label>
+      <select name="course_id" required style="width:100%">{% for c in courses %}<option value="{{ c.id }}">{{ c.code }} {{ c.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Class list (.csv or .xlsx) with a student ID column</label><input type="file" name="file" accept=".csv,.xlsx,.xls" required></div>
+    <button class="btn btn-primary">Download with pseudonymous codes</button>
+  </form>
+  <p class="small muted mt">Share the result only through approved channels with the lecturers of that course. Lecturers can also search for a student by real ID on their dashboard; the ID is hashed and never stored.</p>
+</div>
+{% endblock %}

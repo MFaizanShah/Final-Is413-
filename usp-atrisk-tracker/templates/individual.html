@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}What-if analysis | {{ course.code }}{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="{{ url_for('overview') }}">Home</a> / <a href="{{ url_for('course_dashboard', course_id=course.id) }}">{{ course.code }}</a> / What-if analysis</nav>
+<h1>What-if analysis</h1>
+<p class="lede-note">Enter a set of marks to see how a student would stand in {{ course.code }}: their chance of failing, what they would need to pass, and where they would be falling behind. Useful before a conversation with a student. Nothing you enter is saved.</p>
+
+<section class="card" style="max-width:760px">
+  <form method="post">
+    <table>
+      <thead><tr><th>Assessment</th><th class="num">Weight</th><th>Mark out of 100</th></tr></thead>
+      <tbody>
+      {% for a in assessments %}
+        <tr><td>{{ a.name }} <span class="small muted">{{ a.atype|lower }}</span></td><td class="num">{{ a.weight|round(1) }}%</td>
+          <td><input type="number" name="mark_{{ a.id }}" min="0" max="100" step="0.1" placeholder="not yet" style="width:120px" aria-label="Mark for {{ a.name }}"></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="hint">Leave a box empty if that assessment has not happened yet. Enter 0 for work that was not submitted.</p>
+    <button class="btn btn-primary">Show the result</button>
+  </form>
+</section>
+{% endblock %}
